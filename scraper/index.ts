@@ -264,7 +264,7 @@ async function scrapeSimplyHired(page: Page, context: BrowserContext, queryTerm:
                     jobType = analysis.jobType;
                 }
 
-                return { ...job, job_type: jobType, date_posted: parseRelativeDate(job.postedText || "") };
+                return { ...job, job_type: jobType, date_posted: todayET() };
             });
             const results = await Promise.all(batchPromises);
             for (const res of results) {
