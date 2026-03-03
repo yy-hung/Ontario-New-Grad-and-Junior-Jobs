@@ -1,5 +1,15 @@
 import { getDb } from "../src/lib/db";
 import { chromium, Browser, BrowserContext, Page } from "playwright";
+interface Job {
+    title: string;
+    company: string;
+    location: string;
+    link: string;
+    postedText: string;
+    source: string;
+    job_type: string;
+    date_posted?: string; // optional, will be set later
+}
 
 // Helper to parse job type and check experience from raw HTML
 function analyzeJobDetails(html: string, title: string, location: string = ""): { isSenior: boolean, jobType: string, isUnavailable: boolean, isNonCanadian: boolean } {
