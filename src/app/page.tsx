@@ -12,6 +12,8 @@ type Job = {
   source: string;
   job_type?: string;
   created_at: string;
+  
+  postedText?: string; 
 };
 
 const TIME_FILTERS = [
