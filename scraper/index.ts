@@ -35,15 +35,26 @@ function analyzeJobDetails(html: string, title: string, location: string = ""): 
 
     // Determine Job Type
     let jobType = "Full-Time";
-    const coopTerms = ["co-op", "coop", "intern", "internship", "student", "placement", "work-study", "undergraduate", "scholar"];
+    // Broad terms used only for title matching (single words are safe there)
+    const coopTitleTerms = ["co-op", "coop", "intern", "internship", "student", "placement", "work-study", "undergraduate", "scholar"];
+    // Explicit multi-word phrases for body text — avoids false positives like
+    // "student loan benefit", "academic placement", "scholarship program", etc.
+    const coopBodyPhrases = [
+        "co-op", "coop", "internship", "intern position", "intern role",
+        "student position", "student role", "student opportunity", "student placement",
+        "currently enrolled", "currently attending", "must be enrolled", "must be a student",
+        "work-study", "work study program", "cooperative education",
+        "returning to school", "returning to full-time"
+    ];
     const gradTerms = ["recent grad", "new grad", "graduating", "entry level", "junior", "associate", "trainee", "entry-level", "new graduate", "graduate", "graduation"];
 
-    // Title match takes priority for specific labeling
-    if (coopTerms.some(t => lowerTitle.includes(t))) {
+    // Title match takes priority — broad single-word check is fine here
+    if (coopTitleTerms.some(t => lowerTitle.includes(t))) {
         jobType = "Co-op";
     } else if (gradTerms.some(t => lowerTitle.includes(t))) {
         jobType = "Graduating";
-    } else if (coopTerms.some(t => text.includes(t))) {
+    } else if (coopBodyPhrases.some(t => text.includes(t))) {
+        // Body text: only explicit phrases that unambiguously describe a co-op/intern role
         jobType = "Co-op";
     } else if (gradTerms.some(t => text.includes(t))) {
         jobType = "Graduating";
@@ -101,6 +112,71 @@ function analyzeJobDetails(html: string, title: string, location: string = ""): 
     }
 
     return { isSenior, jobType, isUnavailable, isNonCanadian };
+}
+
+// Returns the current date string (YYYY-MM-DD) in Eastern Time
+function todayET(): string {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Toronto",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(new Date()); // en-CA locale formats as YYYY-MM-DD
+}
+
+// Returns a Date object whose local fields (getFullYear, getMonth, getDate, etc.)
+// reflect the current moment in Eastern Time, so arithmetic on days/weeks/months
+// stays in ET rather than UTC.
+function nowET(): Date {
+    const etStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Toronto",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    }).format(new Date());
+    // en-CA gives "YYYY-MM-DD, HH:mm:ss" – parse it into a plain Date
+    return new Date(etStr.replace(", ", "T"));
+}
+
+// Utility to parse relative dates (e.g., "3 weeks ago") into YYYY-MM-DD (ET)
+function parseRelativeDate(relativeStr: string): string {
+    if (!relativeStr) return todayET();
+
+    const lower = relativeStr.toLowerCase().trim();
+
+    // If it's already YYYY-MM-DD or similar, return it
+    if (/^\d{4}-\d{2}-\d{2}/.test(lower)) return lower.split('T')[0];
+
+    // Start from the current ET date so arithmetic stays in Eastern Time
+    const now = nowET();
+
+    // Handle "ago" strings
+    const numMatch = lower.match(/(\d+)/);
+    const num = numMatch ? parseInt(numMatch[1]) : 1;
+
+    if (lower.includes("hour")) {
+        now.setHours(now.getHours() - num);
+    } else if (lower.includes("day") || lower.includes(" jour")) {
+        now.setDate(now.getDate() - num);
+    } else if (lower.includes("week") || lower.includes(" sem")) {
+        now.setDate(now.getDate() - (num * 7));
+    } else if (lower.includes("month") || lower.includes(" mois")) {
+        now.setMonth(now.getMonth() - num);
+    } else if (lower.includes("yesterday") || lower.includes("hier")) {
+        now.setDate(now.getDate() - 1);
+    } else if (lower.includes("just now") || lower.includes("today") || lower.includes("minute")) {
+        // stay same day
+    }
+
+    // Format as YYYY-MM-DD using local (ET) date fields
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
 }
 
 async function scrapeSimplyHired(page: Page, context: BrowserContext, queryTerm: string) {
@@ -188,7 +264,7 @@ async function scrapeSimplyHired(page: Page, context: BrowserContext, queryTerm:
                     jobType = analysis.jobType;
                 }
 
-                return { ...job, job_type: jobType };
+                return { ...job, job_type: jobType, date_posted: parseRelativeDate(job.postedText || "") };
             });
             const results = await Promise.all(batchPromises);
             for (const res of results) {
@@ -252,7 +328,7 @@ async function scrapeLinkedIn(page: Page, context: BrowserContext, queryTerm: st
                 const company = companyEl ? (companyEl as HTMLElement).innerText.trim() : "";
                 const location = locEl ? (locEl as HTMLElement).innerText.trim() : "Ontario, CA";
                 let link = linkEl ? (linkEl as HTMLAnchorElement).href : "";
-                const postedDate = timeEl ? timeEl.getAttribute("datetime") : "";
+                const postedDate = timeEl ? (timeEl.getAttribute("datetime") || timeEl.innerText.trim()) : "";
 
                 if (link && link.includes('?')) {
                     link = link.split('?')[0]; // Clean tracking params
@@ -354,15 +430,19 @@ async function scrapeLinkedIn(page: Page, context: BrowserContext, queryTerm: st
             }
         }
 
-        const thirtyDaysAgo = new Date();
+        const thirtyDaysAgo = nowET();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         for (const job of validJobs) {
             if (job.postedText) {
-                const jobDate = new Date(job.postedText);
+                const jobDateStr = parseRelativeDate(job.postedText);
+                const jobDate = new Date(jobDateStr);
                 if (jobDate < thirtyDaysAgo) {
                     continue;
                 }
+                job.date_posted = jobDateStr;
+            } else {
+                job.date_posted = todayET();
             }
             jobs.push(job);
         }
@@ -381,7 +461,7 @@ async function fetchRemoteJobs() {
     const data = await response.json();
     const jobs = [];
 
-    const thirtyDaysAgo = new Date();
+    const thirtyDaysAgo = nowET();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const negativeKeywords = ["senior", "sr", "lead", "manager", "principal", "director", "head", "vp"];
 
@@ -452,8 +532,12 @@ async function scrapeWorkopolis(page: Page, context: BrowserContext, queryTerm: 
         for (const job of pageData) {
             const analysis = analyzeJobDetails("", job.title, job.location);
             if (!analysis.isSenior && !analysis.isNonCanadian) {
-                // Try to get deep details if possible, but keep it light to avoid bans
-                jobs.push({ ...job, source: "Workopolis", job_type: analysis.jobType });
+                jobs.push({
+                    ...job,
+                    source: "Workopolis",
+                    job_type: analysis.jobType,
+                    date_posted: parseRelativeDate(job.postedText || "")
+                });
             }
         }
     } catch (err) {
@@ -479,11 +563,14 @@ async function scrapeWellfound(page: Page, context: BrowserContext, queryTerm: s
                 const companyEl = c.querySelector('[class*="styles_name"]');
                 const linkEl = c.querySelector('a[class*="styles_title"]');
 
+                const dateEl = c.querySelector('[class*="styles_posted"]');
+
                 return {
                     title: titleEl?.textContent?.trim() || "",
                     company: companyEl?.textContent?.trim() || "Unknown",
                     location: "Canada (Remote/Hybrid)",
-                    link: (linkEl as HTMLAnchorElement)?.href || ""
+                    link: (linkEl as HTMLAnchorElement)?.href || "",
+                    postedText: dateEl?.textContent?.trim() || ""
                 };
             }).filter(j => j.title && j.link);
         });
@@ -491,7 +578,12 @@ async function scrapeWellfound(page: Page, context: BrowserContext, queryTerm: s
         for (const job of pageData) {
             const analysis = analyzeJobDetails("", job.title, job.location);
             if (!analysis.isSenior && !analysis.isNonCanadian) {
-                jobs.push({ ...job, source: "Wellfound", job_type: analysis.jobType });
+                jobs.push({
+                    ...job,
+                    source: "Wellfound",
+                    job_type: analysis.jobType,
+                    date_posted: parseRelativeDate(job.postedText || "")
+                });
             }
         }
     } catch (err) {
@@ -529,7 +621,12 @@ async function scrapeWorkInTech(page: Page, context: BrowserContext, queryTerm: 
         for (const job of pageData) {
             const analysis = analyzeJobDetails("", job.title, job.location);
             if (!analysis.isSenior && !analysis.isNonCanadian) {
-                jobs.push({ ...job, source: "WorkInTech", job_type: analysis.jobType });
+                jobs.push({
+                    ...job,
+                    source: "WorkInTech",
+                    job_type: analysis.jobType,
+                    date_posted: parseRelativeDate(job.postedText || "")
+                });
             }
         }
     } catch (err) {
@@ -567,7 +664,12 @@ async function scrapeIndeed(page: Page, context: BrowserContext, queryTerm: stri
         for (const job of pageData) {
             const analysis = analyzeJobDetails("", job.title, job.location);
             if (!analysis.isSenior && !analysis.isNonCanadian) {
-                jobs.push({ ...job, source: "Indeed", job_type: analysis.jobType });
+                jobs.push({
+                    ...job,
+                    source: "Indeed",
+                    job_type: analysis.jobType,
+                    date_posted: parseRelativeDate(job.postedText || "")
+                });
             }
         }
     } catch (err) {
@@ -592,11 +694,14 @@ async function scrapeSimplify(page: Page, context: BrowserContext, queryTerm: st
                 const companyEl = c.querySelector("p");
                 const linkEl = c.querySelector("a");
 
+                const dateEl = c.querySelector('[class*="postedAt"], [class*="date"]');
+
                 return {
                     title: titleEl?.textContent?.trim() || "",
                     company: companyEl?.textContent?.trim() || "Unknown",
                     location: "Canada",
-                    link: (linkEl as HTMLAnchorElement)?.href || ""
+                    link: (linkEl as HTMLAnchorElement)?.href || "",
+                    postedText: dateEl?.textContent?.trim() || ""
                 };
             }).filter(j => j.title && j.link);
         });
@@ -604,7 +709,12 @@ async function scrapeSimplify(page: Page, context: BrowserContext, queryTerm: st
         for (const job of pageData) {
             const analysis = analyzeJobDetails("", job.title, job.location);
             if (!analysis.isSenior && !analysis.isNonCanadian) {
-                jobs.push({ ...job, source: "Simplify", job_type: analysis.jobType });
+                jobs.push({
+                    ...job,
+                    source: "Simplify",
+                    job_type: analysis.jobType,
+                    date_posted: parseRelativeDate(job.postedText || "")
+                });
             }
         }
     } catch (err) {
@@ -642,7 +752,12 @@ async function scrapeFindYourJob(page: Page, context: BrowserContext, queryTerm:
         for (const job of pageData) {
             const analysis = analyzeJobDetails("", job.title, job.location);
             if (!analysis.isSenior && !analysis.isNonCanadian) {
-                jobs.push({ ...job, source: "FindYourJob", job_type: analysis.jobType });
+                jobs.push({
+                    ...job,
+                    source: "FindYourJob",
+                    job_type: analysis.jobType,
+                    date_posted: parseRelativeDate(job.postedText || "")
+                });
             }
         }
     } catch (err) {
@@ -726,6 +841,24 @@ export async function runScraper() {
          OR title LIKE '%level ii%'
     `);
 
+                // Fix incorrectly-tagged Co-op jobs: reset to Full-Time if the title
+                // doesn't actually contain a co-op/intern/student term (false positives
+                // from the old broad body-text scan).
+                await db.execute(`
+      UPDATE jobs
+      SET job_type = 'Full-Time'
+      WHERE job_type = 'Co-op'
+        AND title NOT LIKE '%co-op%'
+        AND title NOT LIKE '%coop%'
+        AND title NOT LIKE '%intern%'
+        AND title NOT LIKE '%internship%'
+        AND title NOT LIKE '%student%'
+        AND title NOT LIKE '%work-study%'
+        AND title NOT LIKE '%undergraduate%'
+        AND title NOT LIKE '%scholar%'
+        AND title NOT LIKE '%placement%'
+    `);
+
                 // Update labels
                 await db.execute(`
       UPDATE jobs 
@@ -743,8 +876,13 @@ export async function runScraper() {
       SET job_type = 'Co-op' 
       WHERE (title LIKE '%student%' 
          OR title LIKE '%intern%' 
+         OR title LIKE '%internship%' 
          OR title LIKE '%co-op%' 
-         OR title LIKE '%coop%')
+         OR title LIKE '%coop%'
+         OR title LIKE '%work-study%'
+         OR title LIKE '%undergraduate%'
+         OR title LIKE '%scholar%'
+         OR title LIKE '%placement%')
         AND job_type != 'Co-op'
     `);
             } catch (err: any) {
@@ -755,8 +893,8 @@ export async function runScraper() {
                 try {
                     await db.execute({
                         sql: `INSERT INTO jobs (title, company, location, link, date_posted, source, job_type) 
-                              VALUES (?, ?, ?, ?, date('now'), ?, ?)`,
-                        args: [job.title, job.company, job.location, job.link, job.source, job.job_type || 'Full-Time']
+                              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                        args: [job.title, job.company, job.location, job.link, job.date_posted || todayET(), job.source, job.job_type || 'Full-Time']
                     });
                     queryInserted++;
                 } catch (dbErr: any) {
@@ -785,8 +923,8 @@ export async function runScraper() {
             try {
                 await db.execute({
                     sql: `INSERT INTO jobs (title, company, location, link, date_posted, source, job_type) 
-                          VALUES (?, ?, ?, ?, date('now'), ?, ?)`,
-                    args: [job.title, job.company, job.location, job.link, job.source, job.job_type || 'Full-Time']
+                          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    args: [job.title, job.company, job.location, job.link, job.date_posted || job.date || todayET(), job.source, job.job_type || 'Full-Time']
                 });
             } catch (e) { }
         }

@@ -1,8 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+    // Only allow requests with the correct secret token
+    const auth = request.headers.get("authorization") ?? "";
+    const secret = process.env.SCRAPE_SECRET;
+
+    if (!secret || auth !== `Bearer ${secret}`) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     try {
         // Trigger the scraper in a detached background process
         const scraperPath = path.resolve(process.cwd(), "scraper", "index.ts");

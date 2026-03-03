@@ -52,7 +52,6 @@ export default function Home() {
   const [postAge, setPostAge] = useState("Any time");
   const [viewedJobs, setViewedJobs] = useState<Set<number>>(new Set());
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     // Fetch all jobs initially
@@ -99,26 +98,6 @@ export default function Home() {
     }
   };
 
-  const handleRefresh = async () => {
-    if (confirm("This will trigger a new crawl. It may take a few minutes. Start now?")) {
-      setRefreshing(true);
-      try {
-        // We use a separate local script or the existing scraper
-        // For now, let's just trigger the scrape endpoint (to be created)
-        const res = await fetch("/api/scrape", { method: "POST" });
-        if (res.ok) {
-          alert("Scraper started in background. Please wait a few minutes and refresh the page.");
-          fetchStats(); // Update the date
-        } else {
-          alert("Failed to start scraper. Please check server logs.");
-        }
-      } catch (err) {
-        alert("Error starting scraper.");
-      } finally {
-        setRefreshing(false);
-      }
-    }
-  };
 
   const applyFilters = () => {
     let result = jobs;
@@ -216,13 +195,6 @@ export default function Home() {
 
         <div className="stats-bar">
           {lastUpdated && <span className="last-updated">Last data update: <strong>{lastUpdated}</strong></span>}
-          <button
-            className={`refresh-btn ${refreshing ? 'loading' : ''}`}
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            {refreshing ? "Refreshing..." : "Refresh Jobs"}
-          </button>
         </div>
 
         <form onSubmit={handleSearch} className="filters-container">

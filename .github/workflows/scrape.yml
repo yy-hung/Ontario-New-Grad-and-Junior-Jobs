@@ -2,8 +2,8 @@ name: Scheduled Job Scraper
 
 on:
   schedule:
-    # Runs at 00:00 and 12:00 UTC every day
-    - cron: '0 0,12 * * *'
+    # Runs at 13:00 UTC (= 8:00 AM ET / EST) once per day
+    - cron: '0 13 * * *'
   workflow_dispatch: # Allows manual triggering
 
 jobs:
