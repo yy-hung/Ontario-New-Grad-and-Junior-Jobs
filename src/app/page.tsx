@@ -12,8 +12,8 @@ type Job = {
   source: string;
   job_type?: string;
   created_at: string;
-  
-  postedText?: string; 
+
+  postedText?: string;
 };
 
 const TIME_FILTERS = [
@@ -107,19 +107,19 @@ export default function Home() {
     // 1. Title Search (Exact or partial match, case-insensitive)
     if (searchTitle.trim()) {
       const q = searchTitle.toLowerCase();
-      result = result.filter(j => j.title.toLowerCase().includes(q) || j.company.toLowerCase().includes(q));
+      result = result.filter(j => (j.title || "").toLowerCase().includes(q) || (j.company || "").toLowerCase().includes(q));
     }
 
     // 2. City Filter
     if (city !== "All Cities") {
-      result = result.filter(j => j.location.toLowerCase().includes(city.toLowerCase()));
+      result = result.filter(j => (j.location || "").toLowerCase().includes(city.toLowerCase()));
     }
 
     // 3. Field Filter
     if (field !== "All Fields") {
       const f = field.toLowerCase();
       result = result.filter(j => {
-        const t = j.title.toLowerCase();
+        const t = (j.title || "").toLowerCase();
         if (f.includes("software")) return t.includes("software") || t.includes("developer") || t.includes("engineer");
         if (f.includes("web")) return t.includes("web") || t.includes("frontend") || t.includes("backend") || t.includes("full stack");
         if (f.includes("data")) return t.includes("data") || t.includes("analy") || t.includes("machine learning");
