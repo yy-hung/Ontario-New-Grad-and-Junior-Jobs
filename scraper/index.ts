@@ -536,7 +536,7 @@ async function scrapeWorkopolis(page: Page, context: BrowserContext, queryTerm: 
                     ...job,
                     source: "Workopolis",
                     job_type: analysis.jobType,
-                    date_posted: parseRelativeDate(job.postedText || "")
+                    date_posted: todayET()
                 });
             }
         }
