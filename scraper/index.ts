@@ -290,23 +290,43 @@ async function scrapeLinkedIn(page: Page, context: BrowserContext, queryTerm: st
 
                 if (absoluteIndex < maxDeepCheck) {
                     try {
-                        const response = await context.request.get(job.link, { timeout: 8000 });
-                        if (response.ok()) {
+                        // Longer randomized delay for LinkedIn to avoid 429s
+                        await new Promise(r => setTimeout(r, 4000 + Math.random() * 5000));
+
+                        const response = await context.request.get(job.link, { timeout: 10000 });
+                        if (response.status() === 429) {
+                            console.log(`[LinkedIn] Rate limited (429) for ${job.title}. Skipping deep check.`);
+                        } else if (response.ok()) {
                             const html = await response.text();
 
-                            // LinkedIn external redirect check
+                            // Broader redirect check for LinkedIn
+                            // 1. Check applyUrl code block
+                            let externalUrl: string | null = null;
                             const applyUrlMatch = html.match(/<code[^>]*id="applyUrl"[^>]*><!--"([^"]+)"--><\/code>/);
                             if (applyUrlMatch) {
-                                try {
-                                    const redirectUrl = applyUrlMatch[1];
-                                    const urlSearchParams = new URLSearchParams(redirectUrl.split('?')[1]);
-                                    const externalUrl = urlSearchParams.get('url');
-                                    if (externalUrl) {
-                                        job.link = decodeURIComponent(externalUrl).split('?')[0]; // Clean external link too
+                                const redirectUrl = applyUrlMatch[1];
+                                const urlSearchParams = new URLSearchParams(redirectUrl.split('?')[1]);
+                                externalUrl = urlSearchParams.get('url');
+                            }
+
+                            // 2. Fallback to sign-up-modal__company-site-link
+                            if (!externalUrl) {
+                                const modalLinkMatch = html.match(/class="sign-up-modal__company-site-link"[^>]*href="([^"]+)"/);
+                                if (modalLinkMatch) {
+                                    const redirectUrl = modalLinkMatch[1];
+                                    if (redirectUrl.includes('url=')) {
+                                        const urlSearchParams = new URLSearchParams(redirectUrl.split('?')[1]);
+                                        externalUrl = urlSearchParams.get('url');
+                                    } else {
+                                        externalUrl = redirectUrl;
                                     }
-                                } catch (err) {
-                                    // ignore parse error, keep original link
                                 }
+                            }
+
+                            if (externalUrl) {
+                                try {
+                                    job.link = decodeURIComponent(externalUrl).split('?')[0];
+                                } catch (e) { }
                             }
 
                             const analysis = analyzeJobDetails(html, job.title, job.location);
