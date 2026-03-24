@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+
 type Job = {
   id: number;
   title: string;
@@ -57,6 +58,7 @@ export default function Home() {
 
   useEffect(() => {
     // Fetch all jobs initially
+    fetch("/api/log-visit");
     fetchJobs();
 
     // Load viewed jobs from localStorage
