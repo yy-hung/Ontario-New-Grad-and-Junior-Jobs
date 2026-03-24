@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb } from "../../../lib/db";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -21,8 +23,8 @@ export async function GET(request: Request) {
         }
 
         return NextResponse.json(jobs);
-    } catch (error) {
+    } catch (error: any) {
         console.error("API Error:", error);
-        return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to fetch jobs", details: error.message }, { status: 500 });
     }
 }

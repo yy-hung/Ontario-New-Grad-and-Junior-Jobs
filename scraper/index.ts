@@ -1,5 +1,15 @@
 import { getDb } from "../src/lib/db";
 import { chromium, Browser, BrowserContext, Page } from "playwright";
+interface Job {
+    title: string;
+    company: string;
+    location: string;
+    link: string;
+    postedText: string;
+    source: string;
+    job_type: string;
+    date_posted?: string; // optional, will be set later
+}
 
 // Helper to parse job type and check experience from raw HTML
 function analyzeJobDetails(html: string, title: string, location: string = ""): { isSenior: boolean, jobType: string, isUnavailable: boolean, isNonCanadian: boolean } {
@@ -440,9 +450,9 @@ async function scrapeLinkedIn(page: Page, context: BrowserContext, queryTerm: st
                 if (jobDate < thirtyDaysAgo) {
                     continue;
                 }
-                job.date_posted = jobDateStr;
+                (job as any).date_posted = jobDateStr;
             } else {
-                job.date_posted = todayET();
+                (job as any).date_posted = todayET();
             }
             jobs.push(job);
         }
@@ -459,7 +469,7 @@ async function fetchRemoteJobs() {
     console.log("Fetching remote jobs from API as fallback...");
     const response = await fetch("https://remoteok.com/api");
     const data = await response.json();
-    const jobs = [];
+    const jobs: any[] = [];
 
     const thirtyDaysAgo = nowET();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -524,7 +534,8 @@ async function scrapeWorkopolis(page: Page, context: BrowserContext, queryTerm: 
                     title: titleEl?.textContent?.trim() || "",
                     company: companyEl?.textContent?.trim() || "Unknown",
                     location: locEl?.textContent?.trim() || "Ontario, CA",
-                    link: (linkEl as HTMLAnchorElement)?.href || ""
+                    link: (linkEl as HTMLAnchorElement)?.href || "",
+                    postedText: ""
                 };
             }).filter(j => j.title && j.link);
         });
@@ -613,7 +624,8 @@ async function scrapeWorkInTech(page: Page, context: BrowserContext, queryTerm: 
                     title: titleEl?.textContent?.trim() || "",
                     company: companyEl?.textContent?.trim() || "Unknown",
                     location: locEl?.textContent?.trim() || "Ontario, CA",
-                    link: (linkEl as HTMLAnchorElement)?.href || ""
+                    link: (linkEl as HTMLAnchorElement)?.href || "",
+                    postedText: ""
                 };
             }).filter(j => j.title && j.link);
         });
@@ -656,7 +668,8 @@ async function scrapeIndeed(page: Page, context: BrowserContext, queryTerm: stri
                     title: titleEl?.textContent?.trim() || "",
                     company: companyEl?.textContent?.trim() || "Unknown",
                     location: locEl?.textContent?.trim() || "Ontario, CA",
-                    link: (linkEl as HTMLAnchorElement)?.href || ""
+                    link: (linkEl as HTMLAnchorElement)?.href || "",
+                    postedText: ""
                 };
             }).filter(j => j.title && j.link);
         });
@@ -744,7 +757,8 @@ async function scrapeFindYourJob(page: Page, context: BrowserContext, queryTerm:
                     title: titleEl?.textContent?.trim() || "",
                     company: companyEl?.textContent?.trim() || "Unknown",
                     location: locEl?.textContent?.trim() || "Ontario, CA",
-                    link: (linkEl as HTMLAnchorElement)?.href || ""
+                    link: (linkEl as HTMLAnchorElement)?.href || "",
+                    postedText: ""
                 };
             }).filter(j => j.title && j.link);
         });
